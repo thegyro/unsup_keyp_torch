@@ -1,0 +1,9 @@
+*.pyc
+*.idea
+.DS_Store
+exp_data/
+data/
+vids/
+vids_old/
+*.mp4
+*.ckpt
