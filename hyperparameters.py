@@ -92,7 +92,11 @@ def get_config(FLAGS):
     cfg.scheduled_sampling_p_true_end_obs = 0.1
     cfg.scheduled_sampling_p_true_start_pred = 1.0
     cfg.scheduled_sampling_p_true_end_pred = 0.5
-    cfg.num_samples_for_bom = 10
+    cfg.num_samples_for_bom = 1
+
+    cfg.pred_keyp_loss_scale = FLAGS.keyp_reg
+    cfg.pred_action_loss_scale = FLAGS.action_reg
+    cfg.action_dim = FLAGS.action_dim
 
     return cfg
 

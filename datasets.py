@@ -4,7 +4,7 @@ import os
 import numpy as np
 
 # Data fields used by the model:
-REQUIRED_DATA_FIELDS = ['image', 'true_object_pos']
+REQUIRED_DATA_FIELDS = ['image', 'true_object_pos', 'action']
 
 import torch
 from torch.utils.data import Dataset, IterableDataset, DataLoader, ChainDataset, ConcatDataset
@@ -84,7 +84,7 @@ class ImgSequenceDataset(Dataset):
 
     def _process_data(self, filename, num_timesteps, shuffle=True):
         data_dict = _read_numpy_sequences(filename)
-        data_dict.pop('filename')
+        #data_dict.pop('filename')
 
         seq_data_dict = _chunk_sequence(data_dict, num_timesteps, random_offset=False, shuffle=shuffle)
 
@@ -180,7 +180,7 @@ def get_sequence_dataset(data_dir,
 def _read_numpy_sequences(filename):
     try:
         with open(filename, 'rb') as f:
-            sequence_dict = {k: v for k, v in np.load(f).items()}
+            sequence_dict = {k: v for k, v in np.load(f, allow_pickle=True).items()}
     except IOError as e:
         print('Caught IOError: "{}". Skipping file {}.'.format(e, filename))
 
@@ -192,7 +192,7 @@ def _read_numpy_sequences(filename):
     # Add filename and frame arrays for traceability:
     num_frames = list(sequence_dict.values())[0].shape[0]
     sequence_dict['frame_ind'] = np.arange(num_frames, dtype=np.int32)
-    sequence_dict['filename'] = np.full(num_frames, os.path.basename(filename))
+    sequence_dict['file_idx'] = np.full(num_frames, int(filename.split("_")[-1].split(".")[0]))
 
     return sequence_dict
 
@@ -277,14 +277,22 @@ def shuffle_dict(d, length):
 
 if __name__ == "__main__":
     #d, s = get_dataset("data/acrobot/train", 32)
-    d, s = get_sequence_dataset("data/acrobot/train", 4, 8, shuffle=True)
-    # d, s = get_sequence_dataset("data/bair_push/train", 32, 8,
+    #d, s = get_sequence_dataset("data/acrobot_big/train", 32, 16, shuffle=False)
+    #d, s = get_sequence_dataset("data/fetch_push/train", 32, 16, shuffle=False)
+    #d, s = get_sequence_dataset("data/bair_push/orig", 1, 30, shuffle=False)
+    #d, s = get_sequence_dataset("data/fetch_push/train", 1, 16, shuffle=True)
+    #d, s = get_sequence_dataset("data/fetch_pick/train", 1, 16, shuffle=True)
+    #d, s = get_sequence_dataset("data/goal/fetch_pick_sep/", 1, 16, shuffle = True)
+    #d, s = get_sequence_dataset("data/fetch_reach_25/train", 32, 16, shuffle=False)
+    #d, s = get_sequence_dataset("data/bair_push/orig", 32, 30, shuffle=False)
+    d, s = get_sequence_dataset("data/fetch_reach_1/train", 32, 16, shuffle=False)
+    # d, s = get_sequence_dataset("data/robot_push/train", 32, 8,
     #                             num_workers=5,
     #                             shuffle=False)
 
     ind = []
     for (i, a) in enumerate(d):
-        print(i, a['image'].shape, a['frame_ind'])
-        ind.extend(list(a['frame_ind'].numpy().flatten()))
+        print(i, a['image'].shape, a['frame_ind'].shape, a['action'].shape, a['file_idx'].shape)
+        #ind.extend(list(a['frame_ind'].numpy().flatten()))
 
     print(sorted(ind))

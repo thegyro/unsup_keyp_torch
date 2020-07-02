@@ -8,14 +8,12 @@ from torch import optim
 import datasets
 import hyperparameters
 import utils
-from losses import get_heatmap_penalty, temporal_separation_loss
+from losses import temporal_separation_loss, get_heatmap_seq_loss
 import torch
 
-import numpy as np
 
 from utils import get_latest_checkpoint
 from vision import ImagesToKeypEncoder, KeypToImagesDecoder
-#from vision import ImagesToKeypEncoder, KeypToImagesDecoder
 
 import pytorch_lightning as pl
 from pytorch_lightning import Trainer
@@ -30,6 +28,7 @@ class KeypointModel(pl.LightningModule):
 
         cfg = hparams
         input_shape_no_batch = cfg.data_shapes['image'][1:]
+
         # define all the models
         self.images_to_keypoints_net = ImagesToKeypEncoder(cfg, input_shape_no_batch)
         self.keypoints_to_images_net = KeypToImagesDecoder(cfg, input_shape_no_batch)
@@ -44,18 +43,11 @@ class KeypointModel(pl.LightningModule):
                                                              img_seq[:, 0, :, :, :],
                                                              keypoints_seq[:, 0, :, :])
 
-        return keypoints_seq, heatmaps_seq, reconstructed_img_seq
+        return keypoints_seq, \
+               heatmaps_seq, \
+               reconstructed_img_seq
 
-    def _get_heatmap_seq_loss(self, heatmaps_seq):
-        losses = []
-        num_seq = heatmaps_seq.shape[1]
-        for i in range(num_seq):
-            heatmaps = heatmaps_seq[:,i, :, :]
-            losses.append(get_heatmap_penalty(heatmaps))
-
-        return torch.sum(torch.stack(losses))
-
-    def training_step(self, batch, batch_idx):
+    def step(self, batch, batch_idx, is_train=True):
         data = batch
         img_seq = data['image']
 
@@ -64,74 +56,57 @@ class KeypointModel(pl.LightningModule):
         reconstruction_loss = F.mse_loss(img_seq, reconstructed_img_seq, reduction='sum')
         reconstruction_loss /= (img_seq.shape[0] * img_seq.shape[1])
 
-        heatmap_loss = self._get_heatmap_seq_loss(heatmaps_seq)
+        heatmap_loss = get_heatmap_seq_loss(heatmaps_seq)
 
-        temporal_loss = temporal_separation_loss(self.cfg, keypoints_seq[:, :self.cfg.observed_steps])
+        T = self.cfg.observed_steps
+        temporal_loss = temporal_separation_loss(self.cfg,
+                                                 keypoints_seq[:, :T])
+
 
         loss = reconstruction_loss + \
                (heatmap_loss * self.cfg.heatmap_regularization) + \
                (temporal_loss * self.cfg.separation_loss_scale)
-        print(temporal_loss, '\n')
+
+
+        pfx = '' if is_train else 'test_'
         output = {
-            'loss': loss,
-            'recon_loss': reconstruction_loss,
-            'hmap_loss': heatmap_loss,
-            'temporal_loss': temporal_loss
+            pfx + 'loss': loss,
+            pfx + 'recon_loss': reconstruction_loss,
+            pfx + 'hmap_loss': heatmap_loss,
+            pfx + 'temporal_loss': temporal_loss
         }
 
         return output
 
+    def training_step(self, batch, batch_idx):
+        return self.step(batch, batch_idx, True)
+
     def validation_step(self, batch, batch_idx):
-        data = batch
-        img_seq = data['image']
+        return self.step(batch, batch_idx, False)
 
-        keypoints_seq, heatmaps_seq, reconstructed_img_seq = self.forward(img_seq)
+    def aggregate_metrics(self, outputs, is_train=True):
+        pfx = '' if is_train else 'test_'
+        avg_loss = torch.stack([x[pfx + 'loss'] for x in outputs]).mean()
+        avg_recon_loss = torch.stack([x[pfx + 'recon_loss'] for x in outputs]).mean()
+        avg_hmap_loss = torch.stack([x[pfx + 'hmap_loss'] for x in outputs]).mean()
+        avg_temporal_loss = torch.stack([x[pfx + 'temporal_loss'] for x in outputs]).mean()
 
-        reconstruction_loss = F.mse_loss(img_seq, reconstructed_img_seq, reduction='sum')
-        reconstruction_loss /= (img_seq.shape[0] * img_seq.shape[1])
-
-        heatmap_loss = self._get_heatmap_seq_loss(heatmaps_seq)
-
-        #loss = reconstruction_loss + (heatmap_loss * self.cfg.heatmap_regularization)
-        temporal_loss = temporal_separation_loss(self.cfg,  keypoints_seq[:, :self.cfg.observed_steps])
-
-        loss = reconstruction_loss + \
-               (heatmap_loss * self.cfg.heatmap_regularization) + \
-               (temporal_loss * self.cfg.separation_loss_scale)
-
-        return {
-            'test_loss': loss,
-            'test_recon_loss': reconstruction_loss,
-            'test_hmap_loss': heatmap_loss,
-            'test_temporal_loss': temporal_loss
+        pfx = "train/" if is_train else "test/"
+        logs = {
+            pfx+'loss': avg_loss,
+            pfx+'recon_loss': avg_recon_loss,
+            pfx+'hmap_loss': avg_hmap_loss,
+            pfx+'temporal_loss': avg_temporal_loss
         }
+        return logs
 
     def training_epoch_end(self, outputs):
-        avg_loss = torch.stack([x['loss'] for x in outputs]).mean()
-        avg_recon_loss = torch.stack([x['recon_loss'] for x in outputs]).mean()
-        avg_hmap_loss = torch.stack([x['hmap_loss'] for x in outputs]).mean()
-        avg_temporal_loss = torch.stack([x['temporal_loss'] for x in outputs]).mean()
-
-        logs = {'train/loss': avg_loss,
-                'train/recon_loss': avg_recon_loss,
-                'train/hmap_loss': avg_hmap_loss,
-                'train/temporal_loss': avg_temporal_loss}
-
-
+        logs = self.aggregate_metrics(outputs, True)
         return {'log': logs, 'progress_bar': logs}
 
     def validation_epoch_end(self, outputs):
-        avg_loss = torch.stack([x['test_loss'] for x in outputs]).mean()
-        avg_recon_loss = torch.stack([x['test_recon_loss'] for x in outputs]).mean()
-        avg_hmap_loss = torch.stack([x['test_hmap_loss'] for x in outputs]).mean()
-        avg_temporal_loss = torch.stack([x['test_temporal_loss'] for x in outputs]).mean()
-
-        logs = {'test/loss': avg_loss,
-                'test/recon_loss': avg_recon_loss,
-                'test/hmap_loss': avg_hmap_loss,
-                'test/temporal_loss': avg_temporal_loss}
+        logs = self.aggregate_metrics(outputs, False)
         print()
-
         return {'log': logs, 'progress_bar': logs}
 
     def configure_optimizers(self):
@@ -181,10 +156,7 @@ def main(args):
     model = KeypointModel(cfg)
 
     cp_callback = ModelCheckpoint(filepath=os.path.join(checkpoint_dir, "model_"),
-                                  period=50, save_top_k=-1)
-
-
-
+                                  period=25, save_top_k=-1)
 
     logger = TensorBoardLogger(log_dir, name="", version=None)
 

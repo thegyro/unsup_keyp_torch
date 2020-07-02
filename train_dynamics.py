@@ -12,11 +12,9 @@ from dynamics import VRNNKeypoints
 from losses import temporal_separation_loss, get_heatmap_seq_loss
 import torch
 
-import numpy as np
 
 from utils import get_latest_checkpoint
 from vision import ImagesToKeypEncoder, KeypToImagesDecoder
-#from vision import ImagesToKeypEncoder, KeypToImagesDecoder
 
 import pytorch_lightning as pl
 from pytorch_lightning import Trainer
@@ -201,7 +199,7 @@ def main(args):
     model = KeypointModel(cfg)
 
     cp_callback = ModelCheckpoint(filepath=os.path.join(checkpoint_dir, "model_"),
-                                  period=100, save_top_k=-1)
+                                  period=20, save_top_k=-1)
 
     logger = TensorBoardLogger(log_dir, name="", version=None)
 
@@ -223,7 +221,7 @@ def main(args):
                       #gradient_clip_val=cfg.clipnorm,
                       fast_dev_run=False,
                       #train_percent_check=0.1,val_percent_check=0.0,
-                      val_percent_check=0.3,
+                      #val_percent_check=0.3,
                       track_grad_norm=2,
                       show_progress_bar=True)
     trainer.fit(model)

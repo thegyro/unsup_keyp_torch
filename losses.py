@@ -76,6 +76,5 @@ def temporal_separation_loss(cfg, coords):
 
     return loss
 
-
 if __name__ == "__main__":
     w = torch.ones()

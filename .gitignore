@@ -7,3 +7,8 @@ vids/
 vids_old/
 *.mp4
 *.ckpt
+tmp_data/
+tmp_env_state/
+gif/
+vids_env/
+fetch_env_custom/

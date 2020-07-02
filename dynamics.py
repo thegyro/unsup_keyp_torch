@@ -167,6 +167,3 @@ class VRNNKeypoints(nn.Module):
         output_keypoints_seq = stack_time(output_keypoints_list)
 
         return output_keypoints_seq
-
-
-
